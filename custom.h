@@ -24,6 +24,7 @@
 #define QUAD 4
 #define LITE 5
 #define REFLECTION 7
+#define MAXREC 7
 
 //structures based on the JSON sample
 typedef struct CAMERA {

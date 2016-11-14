@@ -469,11 +469,12 @@ void read_scene(const char* filename) {
                     }
 					
 					 else if (strcmp(key, "reflectivity") == 0) {
-                        if (object_type == SPH)
-                            objects[counter].data.sphere.reflection = next_number(json);
                         
-                        else if(object_type == SPH)
+						if(object_type == PLN)
                             objects[counter].data.plane.reflection = next_number(json);
+                        
+                        else if (object_type == SPH)
+                            objects[counter].data.sphere.reflection = next_number(json);
                         
                         else if (object_type == QUAD)
                          objects[counter].data.quadric.reflection = next_number(json);
@@ -484,11 +485,11 @@ void read_scene(const char* filename) {
                         }
                     }
                     else if (strcmp(key, "refractivity") == 0) {
-                        if (object_type == SPH)
-                             objects[counter].data.sphere.refraction = next_number(json);
-                        
-                        else if(object_type == PLAN)
+                       if(object_type == PLN)
                             objects[counter].data.plane.refraction = next_number(json);
+                        
+                        else  if (object_type == SPH)
+                             objects[counter].data.sphere.refraction = next_number(json);
                         
                         else if (object_type == QUAD)
                             objects[counter].data.quadric.refraction = next_number(json);
@@ -499,7 +500,7 @@ void read_scene(const char* filename) {
                         }
                     }
                     else if (strcmp(key, "ior") == 0) {
-                        if (object_type == PLAN)
+                        if (object_type == PLN)
                             objects[counter].data.plane.ior = next_number(json);
                         
                         else if(object_type == SPH)

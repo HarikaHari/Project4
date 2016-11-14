@@ -6,8 +6,9 @@
 #include "custom.h"
 #include "vector.c"
 #include "ppm.c"
-Vector diffuseColor = {0,0,0},specularColor = {0,0,0};
+Vector diffuseColor = {0,0,0},specularColor = {0,0,0}, normal = {0,0,0};
 double pixelColor[3] = {0,0,0};
+int hitIndex; double hitDistance;
 //Returns the position of camera object from the JSON file
 int getCameraPosition(OBJECT *objects){
     int i=0;
@@ -210,35 +211,12 @@ void initializePixelColors() {
    pixelColor[2] = 0;
 }
 
-//calculate the color of objects with illumination
-void computeIlluminationColor(Vector Ro, Vector Rd, int objIndex, double objDistance, OBJECT *objects, LIGHT *lights) {
-    
-	int i;
-	Vector light_Ro = {0,0,0};
-    Vector light_Rd = {0,0,0};
-    
-    // finding light rays origin Ro and dir Rd vectors
-    VectorScale(Rd, objDistance, light_Ro);
-    VectorAddition(light_Ro, Ro, light_Ro);
-    
-    for (i=0; lights[i].color != NULL; i++) {
-        
-	double normal[3] = {0,0,0}, diffuseTemp[3] = {0,0,0}, specularTemp[3] = {0,0,0};	
-	int lightIndex = -1, counter =0;  
-	double distance = INFINITY;
-		
-        // find new ray direction
-        VectorSubstraction(lights[i].position, light_Ro, light_Rd);
-		Vector tempRd;
-		Vector intersection;		
-		VectorScale(Rd, objDistance, tempRd);
-		VectorAddition(Ro, tempRd, intersection);
-		double lightDistance = vectorDistance(intersection, lights[i].position);	
+void computeIntersection(Vector Ro, Vector Rd, int selfObjectIndex, double maxDist,OBJECT *objects) {
 
-	normalize(light_Rd);
-        
+   int objIndex =0, counter = 0;
+            double objDistance = INFINITY;
             for (counter=0; objects[counter].type!=0; counter++) {
-			if (objIndex == counter) continue;
+			if (selfObjectIndex == counter) continue;
                 double t =0;
                 switch (objects[counter].type) {
                     case 0:
@@ -249,86 +227,108 @@ void computeIlluminationColor(Vector Ro, Vector Rd, int objIndex, double objDist
                         break;
                         
                     case SPH:
-                        t = sphereIntersection(light_Ro, light_Rd, objects[counter].data.sphere.position, objects[counter].data.sphere.radius);
-                        break;
+                        t = sphereIntersection(Ro, Rd, objects[counter].data.sphere.position, objects[counter].data.sphere.radius);
+						break;
                         
                     case PLN:
-                        t = planeIntersection(light_Ro, light_Rd, objects[counter].data.plane.position, objects[counter].data.plane.normal);
+                        t = planeIntersection(Ro, Rd, objects[counter].data.plane.position, objects[counter].data.plane.normal);
                         break;
 						
 					case QUAD:
-                        t = quadricIntersection(light_Ro, light_Rd, objects[counter].data.quadric.position, objects[counter].data.quadric.coefficients);
+                        t = quadricIntersection(Ro, Rd, objects[counter].data.quadric.position, objects[counter].data.quadric.coefficients);
                         break;
                         
                     default:
                         exit(1);
                 }
-                if (t > 0 && t < lightDistance) {
-                    distance = t;
-                    lightIndex = counter;
+                if (maxDist != INFINITY && t > maxDist)
+                  continue;
+				if (t > 0 && t < objDistance) {
+		            //printf("\n objects[counter].type %d %lf",objects[counter].type,t);
+                    objDistance = t;
+                    objIndex = counter;
                 }
-			}
-         // start of shadow test
-	
-	 if (lightIndex == -1) {
+                
+            }
+			
+    hitIndex = objIndex;
+    hitDistance = objDistance;
+}
+
+void computeNormal(int objIndex, Vector newRo, Vector Rd, OBJECT *objects) {
+   if (objects[objIndex].type == PLN) {
+      VectorCopy(objects[objIndex].data.plane.normal, normal);
+    }
+    else if (objects[objIndex].type == SPH) {
+       VectorSubstraction(newRo, objects[objIndex].data.sphere.position, normal);
+    }
+    else if (objects[objIndex].type == QUAD) {
+        Vector temp ={0,0,0};
+		double *quad_coef = objects[objIndex].data.quadric.coefficients;
+		double *pos = objects[objIndex].data.quadric.position;
+        normal[0] =-2*quad_coef[0]*(pos[0])-quad_coef[3]*(pos[1])-quad_coef[4]*(pos[2])-quad_coef[6];
+	    normal[1] =-2*quad_coef[1]*(pos[1])-quad_coef[3]*(pos[0])-quad_coef[5]*(pos[2])-quad_coef[7];
+	    normal[2] =-2*quad_coef[2]*(pos[2])-quad_coef[4]*(pos[0])-quad_coef[5]*(pos[1])-quad_coef[8];
+	    normalize(normal);
+        }
+		else {
+        fprintf(stderr, "Error: Can't get normal vector for this Object Type\n");
+        }
+}
+
+//calculate the color of objects with illumination
+void computeIlluminationColor(Vector light_Ro, Vector light_Rd, Vector Rd, int objIndex, double lightDistance, OBJECT *objects,LIGHT light, int ref) {
+         
+	double diffuseTemp[3] = {0,0,0}, specularTemp[3] = {0,0,0};	
+
 
             if (objects[objIndex].type == PLN) {
-                VectorCopy(objects[objIndex].data.plane.normal, normal);
                 VectorCopy(objects[objIndex].data.plane.diffuse_color, diffuseTemp);
 				if(!(objects[objIndex].data.plane.specular_color)) 
                 VectorCopy(objects[objIndex].data.plane.specular_color, specularTemp);	
             }
 			else if (objects[objIndex].type == SPH) {
-                VectorSubstraction(light_Ro, objects[objIndex].data.sphere.position, normal);
-				VectorCopy(objects[objIndex].data.sphere.diffuse_color, diffuseTemp);
+                VectorCopy(objects[objIndex].data.sphere.diffuse_color, diffuseTemp);
                 VectorCopy(objects[objIndex].data.sphere.specular_color, specularTemp);
             } 
 			else if (objects[objIndex].type == QUAD) {
-       
-                Vector temp ={0,0,0};
-		double *quad_coef = objects[objIndex].data.quadric.coefficients;
-		double *pos = objects[objIndex].data.quadric.position;
-        normal[0] =-2*quad_coef[0]*(pos[0])-quad_coef[3]*(pos[1])-quad_coef[4]*(pos[2])-quad_coef[6];
-	normal[1] =-2*quad_coef[1]*(pos[1])-quad_coef[3]*(pos[0])-quad_coef[5]*(pos[2])-quad_coef[7];
-	normal[2] =-2*quad_coef[2]*(pos[2])-quad_coef[4]*(pos[0])-quad_coef[5]*(pos[1])-quad_coef[8];
-	normalize(normal);
-	VectorCopy(objects[objIndex].data.quadric.diffuse_color,diffuseTemp);
-        VectorCopy(objects[objIndex].data.quadric.specular_color, specularTemp);
+            VectorCopy(objects[objIndex].data.quadric.diffuse_color,diffuseTemp);
+            VectorCopy(objects[objIndex].data.quadric.specular_color, specularTemp);
             }
-	 else {
+	        else {
                 fprintf(stderr, "Error: not a valid object\n");
                 exit(1);
             }
-			
-			
-			
+						
 			//variables to start and read angular and radial attenuation 
 			double fang,frad;
-			Vector objectToLightVector;
-			VectorSubstraction(intersection,lights[i].position,objectToLightVector);
-			normalize(objectToLightVector);
-			frad = getRadialAttenuation(&lights[i], lightDistance);
-			fang = getAngularAttenuation(&lights[i], objectToLightVector);
-		
-            //using vectors specified by DR Palmer to calculate diffuse and specular colors
-	    Vector L,R,V;
-            VectorCopy(light_Rd, L);
-	    normalize(normal);	
+			Vector L,R,V;
+			VectorCopy(light_Rd, L);
+			normalize(normal);	
             normalize(L);
             VectorReflection(L, normal, R);
             VectorCopy(Rd, V);
-            calculateDiffuseColor(normal, L, lights[i].color, diffuseTemp);
-	     //To caluculate specular color set ns to 20
-            calculateSpecularColor(R, V, specularTemp, lights[i].color, 20);
+			Vector objectToLightVector;
+			//VectorSubstraction(intersection,lights[i].position,objectToLightVector);
+			VectorCopy(L, objectToLightVector);
+            VectorScale(objectToLightVector, -1, objectToLightVector);
+			normalize(objectToLightVector);
+			if(ref) {
+			frad = getRadialAttenuation(&light, lightDistance);
+			fang = getAngularAttenuation(&light, objectToLightVector);
+			}
+            //using vectors specified by DR Palmer to calculate diffuse and specular colors
+			
+            calculateDiffuseColor(normal, L, light.color, diffuseTemp);
+	         //To caluculate specular color set ns to 20
+            calculateSpecularColor(R, V, specularTemp, light.color, 20);
 
             pixelColor[0] += frad*fang*(specularColor[0] + diffuseColor[0]);
             pixelColor[1] += frad*fang*(specularColor[1] + diffuseColor[1]);
             pixelColor[2] += frad*fang*(specularColor[2] + diffuseColor[2]);
-	}
-    }
+	
+    
 }
-
-
 
 void computePixelColor(double *pixelColor) {
 	int i;
@@ -342,6 +342,146 @@ void computePixelColor(double *pixelColor) {
 	}        
 }
 
+double getReflectionCoefficient(OBJECT *objects, int objIndex){
+    if (objects[objIndex].type == PLN) 
+        return objects[objIndex].data.plane.reflection;
+    
+    else if (objects[objIndex].type == SPH) 
+        return objects[objIndex].data.sphere.reflection;
+    
+    else if (objects[objIndex].type == QUAD)
+        return objects[objIndex].data.quadric.reflection;
+    
+    else {
+        fprintf(stderr, "Error: Can't get reflectivity for this Object Type\n");
+        return -1;
+    }
+}
+
+double getRefractiveCoeffiecient(OBJECT *objects, int objIndex) {
+    if (objects[objIndex].type == PLN) 
+        return objects[objIndex].data.plane.refraction;
+    
+    else if (objects[objIndex].type == SPH) 
+        return objects[objIndex].data.sphere.refraction;
+    
+    else if (objects[objIndex].type == QUAD) 
+        return objects[objIndex].data.quadric.refraction;
+    
+    else {
+        fprintf(stderr, "Error: Can't get refractivity for this Object Type\n");
+        return -1;
+    }
+}
+
+double getIor(OBJECT *objects, int objectIndex){
+    double ior;
+    if (objects[objectIndex].type == PLN) 
+        ior = objects[objectIndex].data.plane.ior;
+    
+    else if (objects[objectIndex].type == SPH) 
+        ior = objects[objectIndex].data.sphere.ior;
+    
+    else if(objects[objectIndex].type == QUAD)
+        ior = objects[objectIndex].data.quadric.ior;
+    
+    else {
+        fprintf(stderr, "Error: Can't get ior for this Object Type\n");
+        exit(1);
+    }
+    if (fabs(ior) < 0.0001)
+        return 1;
+    else
+        return ior;
+}
+
+void computeIlluminationAndReflectionColor(Vector Ro, Vector Rd, int objIndex, double objDistance, int level, OBJECT *objects, LIGHT *lights) {
+    if (level > MAXREC) {
+        
+        pixelColor[0] = 0;
+        pixelColor[1] = 0;
+        pixelColor[2] = 0;
+        return;
+    }
+    Vector newRo = {0,0,0};
+    Vector newRd ={0,0,0};
+	Vector reflectedRo;
+	Vector reflectedRd;
+	int rec_index;
+    double rec_dist;
+    // finding new rays origin Ro and dir Rd vectors
+    VectorScale(Rd, objDistance, newRo);
+    VectorAddition(newRo, Ro, newRo);
+    
+    Vector reflection ={0,0,0};
+    normalize(Rd);
+
+    computeNormal(objIndex, newRo, Rd, objects);
+    normalize(normal);
+    VectorReflection(Rd, normal, reflection);
+    
+    VectorCopy(newRo, reflectedRo);
+    VectorCopy(reflection, reflectedRd);
+	
+    normalize(reflectedRd);
+    computeIntersection(reflectedRo, reflectedRd ,objIndex, INFINITY, objects);
+	rec_index =  hitIndex ;
+    rec_dist = hitDistance;
+    
+    if (rec_index == -1) {
+        // No intersection
+        pixelColor[0] = 0;
+        pixelColor[1] = 0;
+        pixelColor[2] = 0;
+        
+    }
+    else {
+        // we have an intersection, so we use recursively shade...
+        Vector reflectionColor ={0,0,0};
+        double reflectivity = getReflectionCoefficient(objects, objIndex);
+        
+        computeIlluminationAndReflectionColor(reflectedRo, reflectedRd, rec_index, rec_dist, level+1, objects, lights);
+        VectorScale(reflectionColor, reflectivity, reflectionColor);
+        
+        LIGHT light;
+        light.direction = malloc(sizeof(Vector));
+        light.color = malloc(sizeof(Vector));
+        
+        VectorScale(reflection, -1, light.direction);
+        //init light clolor
+        light.color[0] = reflectionColor[0];
+        light.color[1] = reflectionColor[1];
+        light.color[2] = reflectionColor[2];
+        
+        VectorScale(reflectedRd, rec_dist, reflectedRd);
+        VectorSubstraction(reflectedRd, newRo, newRd);
+        normalize(newRd);
+
+        computeIlluminationColor(newRo, newRd, Rd, objIndex, INFINITY, objects, light, 0);
+        
+        free(light.direction);
+        free(light.color);
+    }
+	int i;
+    for (i=0; lights[i].color != NULL; i++) {
+        // find new ray direction
+        newRd[0] = 0;
+		newRd[1] = 0;
+		newRd[2] = 0;
+        VectorSubstraction(lights[i].position, newRo, newRd);
+        double lightDistance = vectorLength(newRd);
+        normalize(newRd);
+        
+        // new check new ray for intersections with other objects
+        computeIntersection(newRo, newRd, objIndex, lightDistance, objects);
+        rec_dist =  hitDistance;
+		rec_index =  hitIndex;
+			
+		if (rec_index == -1) { // this means there was no object in the way between the current one and the light
+            computeIlluminationColor(newRo, newRd, Rd, objIndex, lightDistance, objects, lights[i], 1);
+        }
+    }
+}
 
 void raycast(Image *image, double cameraWidth, double cameraHeight, OBJECT *objects, LIGHT *lights) {
    
@@ -370,48 +510,17 @@ void raycast(Image *image, double cameraWidth, double cameraHeight, OBJECT *obje
             Rd[1] = point[1];
             Rd[2] = point[2];
             
-            int objIndex =0;
-            double objDistance = INFINITY;
-            for (counter=0; objects[counter].type!=0; counter++) {
-                double t =0;
-                switch (objects[counter].type) {
-                    case 0:
-                        printf("no object found\n");
-                        break;
-                        
-                    case CAM:
-                        break;
-                        
-                    case SPH:
-                        t = sphereIntersection(Ro, Rd, objects[counter].data.sphere.position, objects[counter].data.sphere.radius);
-						break;
-                        
-                    case PLN:
-                        t = planeIntersection(Ro, Rd, objects[counter].data.plane.position, objects[counter].data.plane.normal);
-                        break;
-						
-					case QUAD:
-                        t = quadricIntersection(Ro, Rd, objects[counter].data.quadric.position, objects[counter].data.quadric.coefficients);
-                        break;
-                        
-                    default:
-                        exit(1);
-                }
-                if (t > 0 && t < objDistance) {
-		//printf("\n objects[counter].type %d %lf",objects[counter].type,t);
-                    objDistance = t;
-                    objIndex = counter;
-                }
-                
-            }
-			
-
+            
+			computeIntersection(Ro, Rd, -1, INFINITY, objects);
+			double objDistance =  hitDistance;
+			int objIndex =  hitIndex;
 			  // use this to compute the final color of the pixel	
 			initializePixelColors();
 			 
             if (objDistance > 0 && objDistance != INFINITY) {
 				//there is an intersection and applying color to the intersection pixel
-			   computeIlluminationColor(Ro, Rd, objIndex, objDistance, objects, lights);
+			  // computeIlluminationColor(Ro, Rd, objIndex, objDistance, objects, lights);
+			   computeIlluminationAndReflectionColor(Ro, Rd, objIndex, objDistance, 0, objects, lights);
 			   computePixelColor(pixelColor);
 			   colorPixel(pixelColor, x, y, image); 
             }
