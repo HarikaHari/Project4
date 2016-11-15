@@ -105,6 +105,9 @@ typedef struct ray{
 //custom defined type Vector
 typedef double Vector[3]; 
 
+OBJECT objects[ObjectsCount]; // Array of All geometric Objects from JSON File
+LIGHT lights[ObjectsCount]; //Array of all light sources from JSON file
+
 //member functions to read JSON data and write image
 void read_scene(const char* filename);
 int ImageWrite(Image *image, const char *filename,int format);
@@ -115,7 +118,7 @@ void colorPixel(double *color, int row, int col,Image *image);
 double planeIntersection(double *Ro, double *Rd, double *Pos, double *Norm);
 double sphereIntersection(double *Ro, double *Rd, double *C, double r);
 double quadricIntersection (double *Ro, double *Rd, double *pos, double *coefficient);
-void raycast(Image *image, double cam_width, double cam_height, OBJECT *objects, LIGHT *lights);
+void raycast(Image *image, double cam_width, double cam_height);
 
 //member functions for vector calculations
 double sqr(double v);
@@ -127,5 +130,6 @@ void VectorCopy(Vector a, Vector b);
 double VectorDotProduct(Vector a, Vector b);
 void VectorReflection(Vector a, Vector b, Vector c);
 void normalize(double *v);
+void vectorCorssProduct(Vector a, Vector b, Vector c);
 
 #endif /* custom_h */

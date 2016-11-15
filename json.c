@@ -7,9 +7,6 @@
 
 int line = 1;  // global variable, it will tells us which line is not correct
 
-OBJECT objects[ObjectsCount]; // Array of All geometric Objects from JSON File
-LIGHT lights[ObjectsCount]; //Array of all light sources from JSON file
-
 //JSON PARSER CODE BY DR.PALMER START
 
 // next_c() wraps the getc() function and provides error checking and line

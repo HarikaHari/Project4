@@ -6,9 +6,12 @@
 #include "custom.h"
 #include "vector.c"
 #include "ppm.c"
+
 Vector diffuseColor = {0,0,0},specularColor = {0,0,0}, normal = {0,0,0};
-double pixelColor[3] = {0,0,0};
+Vector pixelColor = {0,0,0};
 int hitIndex; double hitDistance;
+
+
 //Returns the position of camera object from the JSON file
 int getCameraPosition(OBJECT *objects){
     int i=0;
@@ -211,9 +214,8 @@ void initializePixelColors() {
    pixelColor[2] = 0;
 }
 
-void computeIntersection(Vector Ro, Vector Rd, int selfObjectIndex, double maxDist,OBJECT *objects) {
-
-   int objIndex =0, counter = 0;
+void computeIntersection(Vector Ro, Vector Rd, int selfObjectIndex, double maxDist) {
+   int objIndex = -1, counter = 0;
             double objDistance = INFINITY;
             for (counter=0; objects[counter].type!=0; counter++) {
 			if (selfObjectIndex == counter) continue;
@@ -227,7 +229,7 @@ void computeIntersection(Vector Ro, Vector Rd, int selfObjectIndex, double maxDi
                         break;
                         
                     case SPH:
-                        t = sphereIntersection(Ro, Rd, objects[counter].data.sphere.position, objects[counter].data.sphere.radius);
+                        t = sphereIntersection(Ro, Rd, objects[counter].data.sphere.position,objects[counter].data.sphere.radius);
 						break;
                         
                     case PLN:
@@ -247,6 +249,7 @@ void computeIntersection(Vector Ro, Vector Rd, int selfObjectIndex, double maxDi
 		            //printf("\n objects[counter].type %d %lf",objects[counter].type,t);
                     objDistance = t;
                     objIndex = counter;
+					//printf("selfObjectIndex %d : hitDistance %ld",hitIndex,hitDistance);
                 }
                 
             }
@@ -255,7 +258,8 @@ void computeIntersection(Vector Ro, Vector Rd, int selfObjectIndex, double maxDi
     hitDistance = objDistance;
 }
 
-void computeNormal(int objIndex, Vector newRo, Vector Rd, OBJECT *objects) {
+void computeNormal(int objIndex, Vector newRo, Vector Rd) {
+   if(objects[objIndex].type != CAM) {
    if (objects[objIndex].type == PLN) {
       VectorCopy(objects[objIndex].data.plane.normal, normal);
     }
@@ -274,24 +278,34 @@ void computeNormal(int objIndex, Vector newRo, Vector Rd, OBJECT *objects) {
 		else {
         fprintf(stderr, "Error: Can't get normal vector for this Object Type\n");
         }
+		}
 }
 
 //calculate the color of objects with illumination
-void computeIlluminationColor(Vector light_Ro, Vector light_Rd, Vector Rd, int objIndex, double lightDistance, OBJECT *objects,LIGHT light, int ref) {
+void computeIlluminationColor(Vector light_Ro, Vector light_Rd, Vector Rd, int objIndex, double lightDistance,LIGHT *light, int ref) {
          
 	double diffuseTemp[3] = {0,0,0}, specularTemp[3] = {0,0,0};	
 
-
+			if(objects[objIndex].type != CAM) {
             if (objects[objIndex].type == PLN) {
+			    VectorCopy(objects[objIndex].data.plane.normal, normal);
                 VectorCopy(objects[objIndex].data.plane.diffuse_color, diffuseTemp);
 				if(!(objects[objIndex].data.plane.specular_color)) 
                 VectorCopy(objects[objIndex].data.plane.specular_color, specularTemp);	
             }
 			else if (objects[objIndex].type == SPH) {
+			    VectorSubstraction(light_Ro, objects[objIndex].data.sphere.position, normal);
                 VectorCopy(objects[objIndex].data.sphere.diffuse_color, diffuseTemp);
                 VectorCopy(objects[objIndex].data.sphere.specular_color, specularTemp);
             } 
 			else if (objects[objIndex].type == QUAD) {
+			 Vector temp ={0,0,0};
+				double *quad_coef = objects[objIndex].data.quadric.coefficients;
+				double *pos = objects[objIndex].data.quadric.position;
+				normal[0] =-2*quad_coef[0]*(pos[0])-quad_coef[3]*(pos[1])-quad_coef[4]*(pos[2])-quad_coef[6];
+				normal[1] =-2*quad_coef[1]*(pos[1])-quad_coef[3]*(pos[0])-quad_coef[5]*(pos[2])-quad_coef[7];
+				normal[2] =-2*quad_coef[2]*(pos[2])-quad_coef[4]*(pos[0])-quad_coef[5]*(pos[1])-quad_coef[8];
+			
             VectorCopy(objects[objIndex].data.quadric.diffuse_color,diffuseTemp);
             VectorCopy(objects[objIndex].data.quadric.specular_color, specularTemp);
             }
@@ -301,7 +315,7 @@ void computeIlluminationColor(Vector light_Ro, Vector light_Rd, Vector Rd, int o
             }
 						
 			//variables to start and read angular and radial attenuation 
-			double fang,frad;
+			double fang = 1,frad = 1;
 			Vector L,R,V;
 			VectorCopy(light_Rd, L);
 			normalize(normal);	
@@ -314,20 +328,20 @@ void computeIlluminationColor(Vector light_Ro, Vector light_Rd, Vector Rd, int o
             VectorScale(objectToLightVector, -1, objectToLightVector);
 			normalize(objectToLightVector);
 			if(ref) {
-			frad = getRadialAttenuation(&light, lightDistance);
-			fang = getAngularAttenuation(&light, objectToLightVector);
-			}
+			frad = getRadialAttenuation(light, lightDistance);
+			fang = getAngularAttenuation(light, objectToLightVector);
+			}			
             //using vectors specified by DR Palmer to calculate diffuse and specular colors
 			
-            calculateDiffuseColor(normal, L, light.color, diffuseTemp);
+            calculateDiffuseColor(normal, L, light->color, diffuseTemp);
 	         //To caluculate specular color set ns to 20
-            calculateSpecularColor(R, V, specularTemp, light.color, 20);
+            calculateSpecularColor(R, V, specularTemp, light->color, 20);
 
             pixelColor[0] += frad*fang*(specularColor[0] + diffuseColor[0]);
             pixelColor[1] += frad*fang*(specularColor[1] + diffuseColor[1]);
             pixelColor[2] += frad*fang*(specularColor[2] + diffuseColor[2]);
 	
-    
+    }
 }
 
 void computePixelColor(double *pixelColor) {
@@ -342,8 +356,9 @@ void computePixelColor(double *pixelColor) {
 	}        
 }
 
-double getReflectionCoefficient(OBJECT *objects, int objIndex){
-    if (objects[objIndex].type == PLN) 
+double getReflectionCoefficient(int objIndex){
+    if(objects[objIndex].type != CAM) {
+	if (objects[objIndex].type == PLN) 
         return objects[objIndex].data.plane.reflection;
     
     else if (objects[objIndex].type == SPH) 
@@ -356,10 +371,12 @@ double getReflectionCoefficient(OBJECT *objects, int objIndex){
         fprintf(stderr, "Error: Can't get reflectivity for this Object Type\n");
         return -1;
     }
+	}
 }
 
-double getRefractiveCoeffiecient(OBJECT *objects, int objIndex) {
-    if (objects[objIndex].type == PLN) 
+double getRefractiveCoeffiecient(int objIndex) {
+    if(objects[objIndex].type != CAM) {
+	if (objects[objIndex].type == PLN) 
         return objects[objIndex].data.plane.refraction;
     
     else if (objects[objIndex].type == SPH) 
@@ -372,10 +389,12 @@ double getRefractiveCoeffiecient(OBJECT *objects, int objIndex) {
         fprintf(stderr, "Error: Can't get refractivity for this Object Type\n");
         return -1;
     }
+	}
 }
 
-double getIor(OBJECT *objects, int objectIndex){
-    double ior;
+double getIor(int objectIndex){
+    double ior = 0.0;
+	if(objects[objectIndex].type != CAM) {
     if (objects[objectIndex].type == PLN) 
         ior = objects[objectIndex].data.plane.ior;
     
@@ -389,104 +408,205 @@ double getIor(OBJECT *objects, int objectIndex){
         fprintf(stderr, "Error: Can't get ior for this Object Type\n");
         exit(1);
     }
+	}
     if (fabs(ior) < 0.0001)
         return 1;
     else
         return ior;
 }
 
-void computeIlluminationAndReflectionColor(Vector Ro, Vector Rd, int objIndex, double objDistance, int level, OBJECT *objects, LIGHT *lights) {
+void computeRefractionValue(Vector Rd, Vector newRo, int objectIndex, double outIor, Vector *refractedVector) {
+    // initializations and variables setup
+    Vector dir, pos;
+    VectorCopy(Rd, dir);
+    VectorCopy(newRo, pos);
+    normalize(dir);
+    normalize(pos);
+    
+    double inIor = getIor(objectIndex);
+    
+    if (inIor == outIor) {
+        inIor =1;
+    }
+    Vector a, b;
+    
+    // find normal vector of current object
+	computeNormal(objectIndex, newRo, Rd);
+    normalize(normal);
+    
+    // create coordinate frame with a and b, where b is tangent to the object intersection
+    vectorCorssProduct(normal, dir, a);
+    normalize(a);
+    vectorCorssProduct(a, normal, b);
+    
+    // find transmission vector angle and direction
+    double sin_theta = VectorDotProduct(dir, b);
+    double sin_phi = (outIor / inIor) * sin_theta;
+    double cos_phi = sqrt(1 - sqr(sin_phi));
+    
+    VectorScale(normal, -1*cos_phi, normal);
+    VectorScale(b, sin_phi, b);
+    VectorAddition(normal , b, *refractedVector);
+
+}
+
+void computeIlluminationAndReflectionColor(Vector Ro, Vector Rd, int objIndex, double objDistance, int level, double ior) {
+
     if (level > MAXREC) {
-        
-        pixelColor[0] = 0;
-        pixelColor[1] = 0;
-        pixelColor[2] = 0;
+		VectorScale(pixelColor, 0, pixelColor);
+        return;
+    }
+	
+	if (objIndex == -1) {  
         return;
     }
     Vector newRo = {0,0,0};
-    Vector newRd ={0,0,0};
+    Vector newRd = {0,0,0};
+	
 	Vector reflectedRo;
 	Vector reflectedRd;
-	int rec_index;
-    double rec_dist;
+	Vector refractedRo;
+	Vector refractedRd;
+		
+    int reflection_index, refraction_index;
+    double reflection_dist, refraction_dist;
+    
+	
     // finding new rays origin Ro and dir Rd vectors
     VectorScale(Rd, objDistance, newRo);
     VectorAddition(newRo, Ro, newRo);
     
-    Vector reflection ={0,0,0};
+    Vector reflection = {0,0,0};
+	Vector refraction = {0,0,0};
     normalize(Rd);
 
-    computeNormal(objIndex, newRo, Rd, objects);
+    computeNormal(objIndex, newRo, Rd);
     normalize(normal);
     VectorReflection(Rd, normal, reflection);
     
-    VectorCopy(newRo, reflectedRo);
-    VectorCopy(reflection, reflectedRd);
+	computeRefractionValue(Rd, newRo, objIndex, ior, &refraction);
 	
-    normalize(reflectedRd);
-    computeIntersection(reflectedRo, reflectedRd ,objIndex, INFINITY, objects);
-	rec_index =  hitIndex ;
-    rec_dist = hitDistance;
+	VectorCopy(newRo, reflectedRo);
+	VectorCopy(reflection, reflectedRd);
+	
+	VectorCopy(newRo, refractedRo);
+	VectorCopy(refraction, refractedRd);
+	
+	normalize(reflectedRd);
+	normalize(refractedRd);
     
-    if (rec_index == -1) {
-        // No intersection
-        pixelColor[0] = 0;
-        pixelColor[1] = 0;
-        pixelColor[2] = 0;
+	computeIntersection(reflectedRo, reflectedRd ,objIndex, INFINITY);
+	reflection_index =  hitIndex ;
+    reflection_dist = hitDistance;
+		
+	if (objects[objIndex].type == PLN)
+        computeIntersection(refractedRo, refractedRo ,objIndex, INFINITY);
+    else
+        computeIntersection(refractedRo, refractedRd ,-1, INFINITY);
+		
+	refraction_index =  hitIndex ;
+    refraction_dist = hitDistance;
+    
+    if (reflection_index == -1 && refraction_index == -1) 
+        VectorScale(pixelColor, 0, pixelColor);
         
-    }
     else {
-        // we have an intersection, so we use recursively shade...
+        // recursive ray tracing 
         Vector reflectionColor ={0,0,0};
-        double reflectivity = getReflectionCoefficient(objects, objIndex);
+		Vector refractionColor ={0,0,0};
+		
+		double reflectIor =1;
+        double refractIor =1;
+		
+        double reflectivity = getReflectionCoefficient(objIndex);
+		double refractivity = getRefractiveCoeffiecient(objIndex);
         
-        computeIlluminationAndReflectionColor(reflectedRo, reflectedRd, rec_index, rec_dist, level+1, objects, lights);
-        VectorScale(reflectionColor, reflectivity, reflectionColor);
-        
-        LIGHT light;
-        light.direction = malloc(sizeof(Vector));
-        light.color = malloc(sizeof(Vector));
-        
-        VectorScale(reflection, -1, light.direction);
-        //init light clolor
-        light.color[0] = reflectionColor[0];
-        light.color[1] = reflectionColor[1];
-        light.color[2] = reflectionColor[2];
-        
-        VectorScale(reflectedRd, rec_dist, reflectedRd);
-        VectorSubstraction(reflectedRd, newRo, newRd);
-        normalize(newRd);
+        LIGHT reflectionLight;
+        reflectionLight.direction = malloc(sizeof(Vector));
+        reflectionLight.color = malloc(sizeof(Vector));
+		
+	if (reflection_index >= 0) {
+            reflectIor = getIor(reflection_index);
 
-        computeIlluminationColor(newRo, newRd, Rd, objIndex, INFINITY, objects, light, 0);
-        
-        free(light.direction);
-        free(light.color);
+            computeIlluminationAndReflectionColor(reflectedRo, reflectedRd, reflection_index, reflection_dist, level+1,reflectIor);
+            VectorScale(reflectionColor, reflectivity, reflectionColor);
+            VectorScale(reflection, -1, reflectionLight.direction);
+            VectorCopy(reflectionColor, reflectionLight.color);
+            
+            VectorScale(reflectedRd, reflection_dist, reflectedRd);
+            VectorSubstraction(reflectedRd, newRo, newRd);
+            normalize(newRd);
+            computeIlluminationColor(newRo, newRd, Rd, objIndex, INFINITY, &reflectionLight, 0);
+        }
+		
+	LIGHT refractionLight;
+        refractionLight.direction = malloc(sizeof(Vector));
+        refractionLight.color = malloc(sizeof(Vector));
+		
+        if (refraction_index >= 0) {
+            refractIor = getIor(refraction_index);
+            VectorScale(refractedRd, 0.01, refractedRd);
+            computeIlluminationAndReflectionColor(refractedRo, refractedRd, refraction_index, refraction_dist, level+1,refractIor);
+            VectorScale(refractionColor, refractivity, refractionColor);
+            VectorScale(refraction, -1, refractionLight.direction);
+            VectorCopy(refractionColor, refractionLight.color);
+            
+            VectorScale(refractedRd, refraction_dist,refractedRd);
+            VectorSubstraction(refractedRd, newRo, newRd);
+            normalize(newRd);
+            computeIlluminationColor(newRo, newRd, Rd, objIndex, INFINITY, &refractionLight, 0);
+        }
+        if (reflectivity == -1) {
+            reflectivity = 0;
+        }
+        if (refractivity == -1) {
+            refractivity = 0;
+        }
+		
+         if (fabs(reflectivity) > 0.00001 && fabs(refractivity) > 0.00001) {
+            
+            double color_coefficient = 1.0 - reflectivity - refractivity;
+            if (fabs(color_coefficient) < 0.0001) 
+                color_coefficient = 0;
+            Vector object_color = {0, 0, 0};
+            VectorCopy(objects[objIndex].data.plane.diffuse_color, object_color);
+            VectorScale(object_color, color_coefficient, object_color);
+            pixelColor[0] += object_color[0];
+            pixelColor[1] += object_color[1];
+            pixelColor[2] += object_color[2];
+        }
+        //removing the allocated memory for light sources through malloc
+        free(reflectionLight.direction);
+        free(reflectionLight.color);
+        free(refractionLight.direction);
+        free(refractionLight.color);
     }
 	int i;
     for (i=0; lights[i].color != NULL; i++) {
         // find new ray direction
-        newRd[0] = 0;
-		newRd[1] = 0;
-		newRd[2] = 0;
+	
+		int lightIndex;
+        double light_dist;
+		VectorScale(newRd , 0 , newRd);
         VectorSubstraction(lights[i].position, newRo, newRd);
         double lightDistance = vectorLength(newRd);
         normalize(newRd);
         
         // new check new ray for intersections with other objects
-        computeIntersection(newRo, newRd, objIndex, lightDistance, objects);
-        rec_dist =  hitDistance;
-		rec_index =  hitIndex;
+        computeIntersection(newRo, newRd, objIndex, lightDistance);
+        light_dist =  hitDistance;
+		lightIndex =  hitIndex;
 			
-		if (rec_index == -1) { // this means there was no object in the way between the current one and the light
-            computeIlluminationColor(newRo, newRd, Rd, objIndex, lightDistance, objects, lights[i], 1);
-        }
+	if (lightIndex == -1) // this means there was no object in the way between the current one and the light
+            computeIlluminationColor(newRo, newRd, Rd, objIndex, lightDistance, &lights[i], 1);
+        
     }
 }
 
-void raycast(Image *image, double cameraWidth, double cameraHeight, OBJECT *objects, LIGHT *lights) {
+void raycast(Image *image, double cameraWidth, double cameraHeight) {
    
     int x, y, counter; 
-    
+
     Vector viewPlanePosition= {0,0,1}; //view plane position
     Vector Ro = {0,0,0}; //Camera position
 	Vector Rd = {0,0,0}; // ray direction
@@ -510,24 +630,24 @@ void raycast(Image *image, double cameraWidth, double cameraHeight, OBJECT *obje
             Rd[1] = point[1];
             Rd[2] = point[2];
             
-            
-			computeIntersection(Ro, Rd, -1, INFINITY, objects);
+              // use this to compute the final color of the pixel	
+	       initializePixelColors();
+
+			computeIntersection(Ro, Rd, -1, INFINITY);
 			double objDistance =  hitDistance;
 			int objIndex =  hitIndex;
-			  // use this to compute the final color of the pixel	
-			initializePixelColors();
-			 
-            if (objDistance > 0 && objDistance != INFINITY) {
-				//there is an intersection and applying color to the intersection pixel
-			  // computeIlluminationColor(Ro, Rd, objIndex, objDistance, objects, lights);
-			   computeIlluminationAndReflectionColor(Ro, Rd, objIndex, objDistance, 0, objects, lights);
+							 
+            if (objIndex != -1 && objDistance > 0 && objDistance != INFINITY) {		
+			   int level = 0;
+			   double ior = 0.0;
+			   computeIlluminationAndReflectionColor(Ro, Rd, objIndex, objDistance, level, ior);
 			   computePixelColor(pixelColor);
 			   colorPixel(pixelColor, x, y, image); 
             }
             else{
 			//colouring the pixel to default color since there was no intersection
-                Vector defaultColor ={0,0,0};
-                colorPixel(defaultColor,x,y,image);
+			Vector defaultColor ={0,0,0};
+			colorPixel(defaultColor,x,y,image);
             }
             
         }
