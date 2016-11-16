@@ -78,3 +78,9 @@ void vectorCorssProduct(Vector a, Vector b, Vector c){
     c[1] = a[2]*b[0] - a[0]*b[2];
     c[2] = a[0]*b[1] - a[1]*b[0];
 }
+
+double calcFresenel(double a, double b, double mix)
+{
+    return b * mix + a * (1 - mix);
+}
+

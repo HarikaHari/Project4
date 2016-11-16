@@ -415,41 +415,46 @@ double getIor(int objectIndex){
 }
 
 void computeRefractionValue(Vector Rd, Vector newRo, int objectIndex, double actualIor, Vector *refractedVector) {
+
     Vector dir, pos, a, b;
     VectorCopy(Rd, dir);
     VectorCopy(newRo, pos);
     normalize(dir);
     normalize(pos);
-    computeNormal(objectIndex, newRo, Rd);
-    normalize(normal);
-	//vector cross product
-    vectorCorssProduct(normal, dir, a);
-    normalize(a);
-	double jsonIor = getIor(objectIndex);
+    double jsonIor = getIor(objectIndex);
     if (jsonIor == actualIor) 
         jsonIor =1;
+    
+    computeNormal(objectIndex, newRo, Rd);
+    normalize(normal);
+    vectorCorssProduct(normal, dir, a);
+    normalize(a);
     vectorCorssProduct(a, normal, b);
     double sine = (actualIor / jsonIor) * VectorDotProduct(dir, b);
     double cosine = sqrt(1 - sqr(sine));
     VectorScale(normal, -1*cosine, normal);
     VectorScale(b, sine, b);
     VectorAddition(normal , b, *refractedVector);
+
 }
 
 void computeIlluminationAndReflectionColor(Vector Ro, Vector Rd, int objIndex, double objDistance, int level, double ior) {
 
     if (level < MAXREC) {
-		    
-	if (objIndex == -1) {  //custom check to verify if the object is valid
+		
+    
+	if (objIndex == -1) {  //custom check to validate if the object is a valid object
         return;
     }
-	//Variable declarations and initializations 
     Vector newRo = {0,0,0};
     Vector newRd = {0,0,0};
+	
 	Vector reflectedRo, reflectedRd, refractedRo, refractedRd;
-	int reflection_index, refraction_index;
+		
+    int reflection_index, refraction_index;
     double reflection_dist, refraction_dist;
-    	
+    
+	
     // finding new rays origin Ro and dir Rd vectors
     VectorScale(Rd, objDistance, newRo);
     VectorAddition(newRo, Ro, newRo);
@@ -502,6 +507,9 @@ void computeIlluminationAndReflectionColor(Vector Ro, Vector Rd, int objIndex, d
         LIGHT reflectionLight;
         reflectionLight.direction = malloc(sizeof(Vector));
         reflectionLight.color = malloc(sizeof(Vector));
+	LIGHT refractionLight;
+        refractionLight.direction = malloc(sizeof(Vector));
+        refractionLight.color = malloc(sizeof(Vector));
 		
 	if (reflection_index >= 0) {
             reflectIor = getIor(reflection_index);
@@ -515,11 +523,9 @@ void computeIlluminationAndReflectionColor(Vector Ro, Vector Rd, int objIndex, d
             VectorSubstraction(reflectedRd, newRo, newRd);
             normalize(newRd);
             computeIlluminationColor(newRo, newRd, Rd, objIndex, INFINITY, &reflectionLight, 0);
-        }
+      
 		
-	LIGHT refractionLight;
-        refractionLight.direction = malloc(sizeof(Vector));
-        refractionLight.color = malloc(sizeof(Vector));
+	
 		
         if (refraction_index >= 0) {
             refractIor = getIor(refraction_index);
@@ -534,24 +540,40 @@ void computeIlluminationAndReflectionColor(Vector Ro, Vector Rd, int objIndex, d
             normalize(newRd);
             computeIlluminationColor(newRo, newRd, Rd, objIndex, INFINITY, &refractionLight, 0);
         }
+  }
         if (reflectivity == -1) {
-            reflectivity = 0;
+            reflectivity = 1;
         }
         if (refractivity == -1) {
-            refractivity = 0;
+            refractivity = 1;
         }
 		
          if (fabs(reflectivity) > 0.00001 && fabs(refractivity) > 0.00001) {
-            
+
+	 Vector Rdn = {0,0,0};  
+	 if (VectorDotProduct(Rd,Rdn) > 0)
+            VectorScale(Rdn, -1, Rdn);
+                        
+            double rayDir[3] = {-Rd[0], -Rd[1], -Rd[2]}; // inverse of the ray direction
+            double facingratio = VectorDotProduct(rayDir,Rdn);
+            double fresneleffect = calcFresenel(pow(1 - facingratio, 3), 1, 0.1);
+
             double coefficient = 1.0 - reflectivity - refractivity;
             if (fabs(coefficient) < 0.0001) 
                 coefficient = 0;
             Vector colorTemp = {0, 0, 0};
             VectorCopy(objects[objIndex].data.plane.diffuse_color, colorTemp);
             VectorScale(colorTemp, coefficient, colorTemp);
-            pixelColor[0] += colorTemp[0];
+            
+	    pixelColor[0] += colorTemp[0];
             pixelColor[1] += colorTemp[1];
             pixelColor[2] += colorTemp[2];
+			
+	    pixelColor[0] += reflectionColor[0] * fresneleffect + refractionColor[0] * (1 - fresneleffect) * refractivity;
+	    pixelColor[1] += reflectionColor[1] * fresneleffect + refractionColor[1] * (1 - fresneleffect) * refractivity;
+	    pixelColor[2] += reflectionColor[2] * fresneleffect + refractionColor[2] * (1 - fresneleffect) * refractivity;
+
+
         }
         //removing the allocated memory for light sources through malloc
         free(reflectionLight.direction);
@@ -637,4 +659,5 @@ void raycast(Image *image, double cameraWidth, double cameraHeight) {
     }
     
 }
+
 
