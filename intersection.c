@@ -213,7 +213,7 @@ void initializePixelColors() {
    diffuseColor[2] = 0;
    pixelColor[2] = 0;
 }
-
+//writing this as a separate function (different from project 2 & 3) because this functionality is used many a times/.
 void computeIntersection(Vector Ro, Vector Rd, int selfObjectIndex, double maxDist) {
    int objIndex = -1, counter = 0;
             double objDistance = INFINITY;
@@ -257,7 +257,7 @@ void computeIntersection(Vector Ro, Vector Rd, int selfObjectIndex, double maxDi
     hitIndex = objIndex;
     hitDistance = objDistance;
 }
-
+//writing this as a separate function (different from project 2 & 3) because this functionality is used many a times/.
 void computeNormal(int objIndex, Vector newRo, Vector Rd) {
    if(objects[objIndex].type != CAM) {
    if (objects[objIndex].type == PLN) {
@@ -332,8 +332,7 @@ void computeIlluminationColor(Vector light_Ro, Vector light_Rd, Vector Rd, int o
 			fang = getAngularAttenuation(light, objectToLightVector);
 			}			
             //using vectors specified by DR Palmer to calculate diffuse and specular colors
-			
-            calculateDiffuseColor(normal, L, light->color, diffuseTemp);
+			calculateDiffuseColor(normal, L, light->color, diffuseTemp);
 	         //To caluculate specular color set ns to 20
             calculateSpecularColor(R, V, specularTemp, light->color, 20);
 
@@ -393,7 +392,7 @@ double getRefractiveCoeffiecient(int objIndex) {
 }
 
 double getIor(int objectIndex){
-    double ior = 0.0;
+    double ior = 0.0; // not the default value. this is just an initialization.
 	if(objects[objectIndex].type != CAM) {
     if (objects[objectIndex].type == PLN) 
         ior = objects[objectIndex].data.plane.ior;
@@ -415,77 +414,56 @@ double getIor(int objectIndex){
         return ior;
 }
 
-void computeRefractionValue(Vector Rd, Vector newRo, int objectIndex, double outIor, Vector *refractedVector) {
-    // initializations and variables setup
-    Vector dir, pos;
+void computeRefractionValue(Vector Rd, Vector newRo, int objectIndex, double actualIor, Vector *refractedVector) {
+    Vector dir, pos, a, b;
     VectorCopy(Rd, dir);
     VectorCopy(newRo, pos);
     normalize(dir);
     normalize(pos);
-    
-    double inIor = getIor(objectIndex);
-    
-    if (inIor == outIor) {
-        inIor =1;
-    }
-    Vector a, b;
-    
-    // find normal vector of current object
-	computeNormal(objectIndex, newRo, Rd);
+    computeNormal(objectIndex, newRo, Rd);
     normalize(normal);
-    
-    // create coordinate frame with a and b, where b is tangent to the object intersection
+	//vector cross product
     vectorCorssProduct(normal, dir, a);
     normalize(a);
+	double jsonIor = getIor(objectIndex);
+    if (jsonIor == actualIor) 
+        jsonIor =1;
     vectorCorssProduct(a, normal, b);
-    
-    // find transmission vector angle and direction
-    double sin_theta = VectorDotProduct(dir, b);
-    double sin_phi = (outIor / inIor) * sin_theta;
-    double cos_phi = sqrt(1 - sqr(sin_phi));
-    
-    VectorScale(normal, -1*cos_phi, normal);
-    VectorScale(b, sin_phi, b);
+    double sine = (actualIor / jsonIor) * VectorDotProduct(dir, b);
+    double cosine = sqrt(1 - sqr(sine));
+    VectorScale(normal, -1*cosine, normal);
+    VectorScale(b, sine, b);
     VectorAddition(normal , b, *refractedVector);
-
 }
 
 void computeIlluminationAndReflectionColor(Vector Ro, Vector Rd, int objIndex, double objDistance, int level, double ior) {
 
-    if (level > MAXREC) {
-		VectorScale(pixelColor, 0, pixelColor);
+    if (level < MAXREC) {
+		    
+	if (objIndex == -1) {  //custom check to verify if the object is valid
         return;
     }
-	
-	if (objIndex == -1) {  
-        return;
-    }
+	//Variable declarations and initializations 
     Vector newRo = {0,0,0};
     Vector newRd = {0,0,0};
-	
-	Vector reflectedRo;
-	Vector reflectedRd;
-	Vector refractedRo;
-	Vector refractedRd;
-		
-    int reflection_index, refraction_index;
+	Vector reflectedRo, reflectedRd, refractedRo, refractedRd;
+	int reflection_index, refraction_index;
     double reflection_dist, refraction_dist;
-    
-	
+    	
     // finding new rays origin Ro and dir Rd vectors
     VectorScale(Rd, objDistance, newRo);
     VectorAddition(newRo, Ro, newRo);
-    
+    //vectors for reflection and refraction
     Vector reflection = {0,0,0};
 	Vector refraction = {0,0,0};
     normalize(Rd);
-
+	//calculatiing reflection value
     computeNormal(objIndex, newRo, Rd);
     normalize(normal);
     VectorReflection(Rd, normal, reflection);
-    
+    //calculating the refraction value
 	computeRefractionValue(Rd, newRo, objIndex, ior, &refraction);
-	
+	//assigning the calculated values to reflection and refraction vectors
 	VectorCopy(newRo, reflectedRo);
 	VectorCopy(reflection, reflectedRd);
 	
@@ -511,7 +489,7 @@ void computeIlluminationAndReflectionColor(Vector Ro, Vector Rd, int objIndex, d
         VectorScale(pixelColor, 0, pixelColor);
         
     else {
-        // recursive ray tracing 
+        // recursive ray tracing start
         Vector reflectionColor ={0,0,0};
 		Vector refractionColor ={0,0,0};
 		
@@ -565,15 +543,15 @@ void computeIlluminationAndReflectionColor(Vector Ro, Vector Rd, int objIndex, d
 		
          if (fabs(reflectivity) > 0.00001 && fabs(refractivity) > 0.00001) {
             
-            double color_coefficient = 1.0 - reflectivity - refractivity;
-            if (fabs(color_coefficient) < 0.0001) 
-                color_coefficient = 0;
-            Vector object_color = {0, 0, 0};
-            VectorCopy(objects[objIndex].data.plane.diffuse_color, object_color);
-            VectorScale(object_color, color_coefficient, object_color);
-            pixelColor[0] += object_color[0];
-            pixelColor[1] += object_color[1];
-            pixelColor[2] += object_color[2];
+            double coefficient = 1.0 - reflectivity - refractivity;
+            if (fabs(coefficient) < 0.0001) 
+                coefficient = 0;
+            Vector colorTemp = {0, 0, 0};
+            VectorCopy(objects[objIndex].data.plane.diffuse_color, colorTemp);
+            VectorScale(colorTemp, coefficient, colorTemp);
+            pixelColor[0] += colorTemp[0];
+            pixelColor[1] += colorTemp[1];
+            pixelColor[2] += colorTemp[2];
         }
         //removing the allocated memory for light sources through malloc
         free(reflectionLight.direction);
@@ -583,10 +561,10 @@ void computeIlluminationAndReflectionColor(Vector Ro, Vector Rd, int objIndex, d
     }
 	int i;
     for (i=0; lights[i].color != NULL; i++) {
-        // find new ray direction
-	
+       //start of illumination code from project 3
 		int lightIndex;
         double light_dist;
+		  // finding light rays origin Ro and dir Rd vectors
 		VectorScale(newRd , 0 , newRd);
         VectorSubstraction(lights[i].position, newRo, newRd);
         double lightDistance = vectorLength(newRd);
@@ -596,11 +574,16 @@ void computeIlluminationAndReflectionColor(Vector Ro, Vector Rd, int objIndex, d
         computeIntersection(newRo, newRd, objIndex, lightDistance);
         light_dist =  hitDistance;
 		lightIndex =  hitIndex;
-			
+			   // start of shadow test
 	if (lightIndex == -1) // this means there was no object in the way between the current one and the light
             computeIlluminationColor(newRo, newRd, Rd, objIndex, lightDistance, &lights[i], 1);
         
     }
+	}
+	else {
+	VectorScale(pixelColor, 0, pixelColor);
+    return;
+	}
 }
 
 void raycast(Image *image, double cameraWidth, double cameraHeight) {
